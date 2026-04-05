@@ -41,7 +41,7 @@ async def process_image(file: UploadFile = File(...)):
         
         # OpenRouter orqali Amerikaning IP manzili bilan bepul Gemini'ga ulanamiz!
         response = client.chat.completions.create(
-            model="google/gemini-2.0-flash-lite-preview-02-05:free",
+        model="google/gemini-1.5-flash:free",
             messages=[
                 {
                     "role": "user",
