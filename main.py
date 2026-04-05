@@ -2,17 +2,19 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import HTMLResponse
 import base64
 import json
+import traceback
 import os
 import re
 from openai import OpenAI
 
+# API kalitni olish
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
-# Timeoutni qo'shish ulanishni barqaror qiladi
+# OpenRouter ulanishi (timeout qo'shildi)
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=api_key,
-    timeout=20.0, 
+    timeout=25.0
 )
 
 app = FastAPI()
@@ -29,11 +31,14 @@ async def process_image(file: UploadFile = File(...)):
         image_data = await file.read()
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        # Promptni yanada qisqartirdik (tezroq javob olish uchun)
-        prompt = "Extract English words and idioms from image. Translate to Uzbek. Return ONLY JSON: {\"words\": [{\"en\": \"...\", \"uz\": \"...\"}], \"idioms\": []}"
+        prompt = """
+        OCR AND TRANSLATE: Extract ALL English words and idioms from image. 
+        Translate to Uzbek. Return ONLY JSON: {"words": [{"en": "...", "uz": "..."}], "idioms": []}
+        """
         
+        # Eng barqaror bepul model
         response = client.chat.completions.create(
-            model="google/gemini-flash-1.5-8b", # 8b versiyasi tezroq javob beradi
+            model="google/gemini-flash-1.5-8b",
             messages=[
                 {
                     "role": "user",
@@ -51,7 +56,16 @@ async def process_image(file: UploadFile = File(...)):
         
         if match:
             return json.loads(match.group(1))
-        return {"error": "Matn topilmadi", "details": raw_content}
+        
+        return {"error": "AI tushunarsiz javob berdi", "details": raw_content}
 
     except Exception as e:
-        return {"error": "Ulanishda xato yuz berdi", "details": str(e)}
+        # Xatoni Vercel Logs'ga chiqarish (Diagnostika uchun)
+        print("--- XATOLIK TAFSILOTI ---")
+        traceback.print_exc()
+        print("-------------------------")
+        return {
+            "error": "Ulanishda xato yuz berdi", 
+            "details": str(e),
+            "type": str(type(e).__name__)
+        }
