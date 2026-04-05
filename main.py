@@ -1,12 +1,21 @@
 import os
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import asyncio
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+# --- 1. PYROGRAM MOTORINI ISHGA TUSHIRISH (Eng birinchi turishi shart!) ---
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+# Endi bemalol kutubxonalarni chaqiraveramiz:
 import google.generativeai as genai
 from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-# --- 1. RENDER.COM UCHUN ALDOVCHI SERVER ---
+# --- 2. RENDER.COM UCHUN ALDOVCHI SERVER ---
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -21,26 +30,20 @@ def run_dummy_server():
 
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. PYROGRAM XATOSINI OLDINI OLISH ---
-try:
-    loop = asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
 
 # --- 3. SOZLAMALAR ---
 API_ID = 36053423
 API_HASH = "82f39002cfa480485590bf961e20bf55"
 BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
-GEMINI_API_KEY = "AIzaSyC1tsZPNB2QT2dw4_15yb96sORG6Z-NB-A" # <--- DIQQAT! O'zingizning API kalitingizni yozing
+GEMINI_API_KEY = "AIzaSyC1tsZPNB2QT2dw4_15yb96sORG6Z-NB-A" # <-- O'zingizning kalitingizni shu yerga qo'ying!
 
-# Gemini sozlamalari
 genai.configure(api_key=GEMINI_API_KEY)
-# Eng tez va matn uchun qulay modelni tanlaymiz
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# in_memory=True xotira xatolarini oldini oladi
+app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) 
 user_modes = {}
+
 
 # --- 4. FUNKSIYALAR ---
 def get_keyboard(user_id):
@@ -50,6 +53,7 @@ def get_keyboard(user_id):
         [InlineKeyboardButton(btn_text, callback_data="toggle_mode")],
         [InlineKeyboardButton("📚 Dasturchi bilan aloqa", url="https://t.me/durov")]
     ])
+
 
 # --- 5. BOT BUYRUQLARI ---
 @app.on_message(filters.command("start"))
@@ -82,43 +86,4 @@ async def handle_message(client, message):
         await message.reply_text("Iltimos, qisqaroq so'z yoki ibora yuboring.")
         return
     
-    wait_msg = await message.reply_text("🧠 Sun'iy intellekt o'ylamoqda...")
-    
-    # Gemini uchun Maxsus Prompt (Buyruq)
-    yo_nalish = "Inglizchadan O'zbekchaga" if mode == "en_uz" else "O'zbekchadan Inglizchaga"
-    
-    prompt = f"""
-    Sen professional ingliz-o'zbek lug'ati va til o'rganish bo'yicha ekspert bot rolidasan. 
-    Foydalanuvchi quyidagi so'z/iborani yubordi: "{word}"
-    Tarjima yo'nalishi: {yo_nalish}.
-
-    Vazifang:
-    1. So'zning aynan foydalanuvchi nazarda tutgan eng asosiy ma'nosini topish.
-    2. Tarjimani oson, tabiiy, ammo akademik darajada (IELTS kabi imtihonlarga mos sifatli so'z boyligi bilan) ko'rsatish.
-    
-    Javobni AYNAN quyidagi formatda, ortiqcha gaplarsiz qaytar:
-    🔤 **Inglizcha**: [So'zning inglizcha varianti]
-    🇺🇿 **O'zbekcha**: [So'zning o'zbekcha tarjimasi]
-    🗣 **Transkripsiya**: [Xalqaro transkripsiya, masalan /wɜːrd/]
-    📖 **Ta'rif (Def)**: [Ingliz tilidagi oson va qisqa ta'rifi]
-    💡 **Misol**: [IELTS darajasidagi, ammo tushunarli sifatli inglizcha gap] - [Shu gapning o'zbekcha tarjimasi]
-    🔗 **Sinonimlar**: [3-4 ta eng aniq va mos inglizcha sinonimlar]
-    """
-
-    try:
-        # Asinxron so'rov yuborish (bot qotib qolmasligi uchun)
-        response = await model.generate_content_async(prompt)
-        ai_text = response.text
-        
-        await wait_msg.edit_text(ai_text, reply_markup=get_keyboard(user_id))
-    except Exception as e:
-        await wait_msg.edit_text(f"Xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring.\n`{e}`")
-
-# --- 6. ISHGA TUSHIRISH ---
-async def main():
-    async with app:
-        print("✅ AI Bot muvaffaqiyatli ishga tushdi!")
-        await idle()
-
-if __name__ == "__main__":
-    loop.run_until_complete(main())
+    wait_msg = await message.reply_text("🧠 Sun'iy intellekt
