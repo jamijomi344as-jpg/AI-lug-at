@@ -4,12 +4,12 @@ import base64
 import json
 import traceback
 import os
-from groq import Groq
+from openai import OpenAI
 
 # Kalit Vercel sozlamalaridan xavfsiz olinadi
-api_key = os.environ.get("GROQ_API_KEY")
+api_key = os.environ.get("OPENAI_API_KEY")
 
-client = Groq(api_key=api_key)
+client = OpenAI(api_key=api_key)
 
 app = FastAPI()
 
@@ -35,7 +35,9 @@ async def process_image(file: UploadFile = File(...)):
         }
         """
         
-        chat_completion = client.chat.completions.create(
+        # ChatGPT (gpt-4o-mini) modeliga rasmni yuborish
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
@@ -50,11 +52,10 @@ async def process_image(file: UploadFile = File(...)):
                     ]
                 }
             ],
-            # MANA SHU QATOR O'ZGARDI: Eng kuchli va ishlaydigan Vision modeli
-            model="llama-3.2-90b-vision-preview",
+            max_tokens=1500
         )
         
-        result_text = chat_completion.choices[0].message.content.strip()
+        result_text = response.choices[0].message.content.strip()
         
         if result_text.startswith("```json"):
             result_text = result_text[7:]
