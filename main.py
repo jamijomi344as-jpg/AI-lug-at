@@ -6,7 +6,7 @@ import traceback
 import os
 from openai import OpenAI
 
-# Kalit Vercel sozlamalaridan xavfsiz olinadi (OpenRouter kalitingiz qolaveradi)
+# Kalit Vercel sozlamalaridan xavfsiz olinadi (OPENROUTER_API_KEY)
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
 # OpenRouter tizimiga ulanish
@@ -39,9 +39,9 @@ async def process_image(file: UploadFile = File(...)):
         }
         """
         
-        # OpenRouter orqali Amerikaning IP manzili bilan bepul Gemini'ga ulanamiz!
+        # Siz topgan aniq Llama 3.2 Vision modeli
         response = client.chat.completions.create(
-        model="google/gemini-1.5-flash:free",
+            model="meta-llama/llama-3.2-11b-vision-instruct",
             messages=[
                 {
                     "role": "user",
