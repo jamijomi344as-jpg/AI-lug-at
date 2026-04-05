@@ -1,4 +1,4 @@
-aiosqlite==0.22.1
+google-generativeaiaiosqlite==0.22.1
 beautifulsoup4==4.14.3
 certifi==2026.2.25
 chardet==3.0.4
