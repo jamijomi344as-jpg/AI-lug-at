@@ -6,14 +6,16 @@ import os
 import re
 from openai import OpenAI
 
+# API kalitni olish
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
+# OpenRouter ulanishi
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=api_key,
 )
 
-app = FastAPI()
+app = FastAPI() # Vercel aynan shu nomni qidiradi
 
 @app.get("/", response_class=HTMLResponse)
 async def home_page():
@@ -27,7 +29,6 @@ async def process_image(file: UploadFile = File(...)):
         image_data = await file.read()
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        # Modelga qat'iy buyruq: so'zlarni lug'at shaklida qaytar (Lemmatization)
         prompt = """
         OCR AND ANALYZE: 
         1. Find English words, phrasal verbs, and idioms. 
@@ -36,19 +37,16 @@ async def process_image(file: UploadFile = File(...)):
         4. Return ONLY JSON: {"words": [{"en": "run", "uz": "yugurmoq"}], "idioms": []}
         """
         
-     # Model qatorini shunday o'zgartiring:
-response = client.chat.completions.create(
-    model="google/gemini-flash-1.5-8b:free", # yoki "meta-llama/llama-3.2-11b-vision-instruct:free"
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-        ]
-    }],
-    temperature=0.1,
-    max_tokens=500 # Tezroq javob olish uchun
-)
+        response = client.chat.completions.create(
+            model="google/gemini-flash-1.5-8b:free", 
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                ]
+            }],
+            temperature=0.1
         )
         
         raw_content = response.choices[0].message.content or ""
