@@ -36,16 +36,19 @@ async def process_image(file: UploadFile = File(...)):
         4. Return ONLY JSON: {"words": [{"en": "run", "uz": "yugurmoq"}], "idioms": []}
         """
         
-        response = client.chat.completions.create(
-        meta-llama/llama-3.2-11b-vision-instruct:free
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                ]
-            }],
-            temperature=0.1
+     # Model qatorini shunday o'zgartiring:
+response = client.chat.completions.create(
+    model="google/gemini-flash-1.5-8b:free", # yoki "meta-llama/llama-3.2-11b-vision-instruct:free"
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+        ]
+    }],
+    temperature=0.1,
+    max_tokens=500 # Tezroq javob olish uchun
+)
         )
         
         raw_content = response.choices[0].message.content or ""
