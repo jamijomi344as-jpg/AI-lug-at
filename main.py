@@ -7,9 +7,13 @@ import os
 from openai import OpenAI
 
 # Kalit Vercel sozlamalaridan xavfsiz olinadi
-api_key = os.environ.get("OPENAI_API_KEY")
+api_key = os.environ.get("OPENROUTER_API_KEY")
 
-client = OpenAI(api_key=api_key)
+# OpenRouter tizimiga ulanish
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key,
+)
 
 app = FastAPI()
 
@@ -35,9 +39,9 @@ async def process_image(file: UploadFile = File(...)):
         }
         """
         
-        # ChatGPT (gpt-4o-mini) modeliga rasmni yuborish
+        # OpenRouter'dagi bepul Llama 3.2 Vision modeliga so'rov
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="meta-llama/llama-3.2-11b-vision-instruct:free",
             messages=[
                 {
                     "role": "user",
@@ -51,8 +55,7 @@ async def process_image(file: UploadFile = File(...)):
                         }
                     ]
                 }
-            ],
-            max_tokens=1500
+            ]
         )
         
         result_text = response.choices[0].message.content.strip()
