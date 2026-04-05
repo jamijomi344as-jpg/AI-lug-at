@@ -37,7 +37,7 @@ async def process_image(file: UploadFile = File(...)):
         """
         
         response = client.chat.completions.create(
-            model="google/gemini-flash-1.5-8b", 
+        meta-llama/llama-3.2-11b-vision-instruct:free
             messages=[{
                 "role": "user",
                 "content": [
