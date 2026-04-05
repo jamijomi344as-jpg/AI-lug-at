@@ -2,19 +2,16 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import HTMLResponse
 import base64
 import json
-import traceback
 import os
 import re
 from openai import OpenAI
 
-# API kalitni olish
+# API kalit Vercel Environment Variables'dan olinadi
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
-# OpenRouter ulanishi (timeout qo'shildi)
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=api_key,
-    timeout=25.0
 )
 
 app = FastAPI()
@@ -31,14 +28,10 @@ async def process_image(file: UploadFile = File(...)):
         image_data = await file.read()
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        prompt = """
-        OCR AND TRANSLATE: Extract ALL English words and idioms from image. 
-        Translate to Uzbek. Return ONLY JSON: {"words": [{"en": "...", "uz": "..."}], "idioms": []}
-        """
+        prompt = "Extract English words and idioms from image. Translate to Uzbek. Return ONLY JSON: {\"words\": [{\"en\": \"...\", \"uz\": \"...\"}], \"idioms\": []}"
         
-        # Eng barqaror bepul model
         response = client.chat.completions.create(
-            model="google/gemini-flash-1.5-8b",
+            model="google/gemini-flash-1.5-8b", 
             messages=[
                 {
                     "role": "user",
@@ -47,8 +40,7 @@ async def process_image(file: UploadFile = File(...)):
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
-            ],
-            temperature=0.1
+            ]
         )
         
         raw_content = response.choices[0].message.content or ""
@@ -56,16 +48,7 @@ async def process_image(file: UploadFile = File(...)):
         
         if match:
             return json.loads(match.group(1))
-        
-        return {"error": "AI tushunarsiz javob berdi", "details": raw_content}
+        return {"error": "Matn topilmadi", "details": raw_content}
 
     except Exception as e:
-        # Xatoni Vercel Logs'ga chiqarish (Diagnostika uchun)
-        print("--- XATOLIK TAFSILOTI ---")
-        traceback.print_exc()
-        print("-------------------------")
-        return {
-            "error": "Ulanishda xato yuz berdi", 
-            "details": str(e),
-            "type": str(type(e).__name__)
-        }
+        return {"error": "Ulanishda xato yuz berdi", "details": str(e)}
