@@ -7,7 +7,6 @@ import os
 import re
 from openai import OpenAI
 
-# Vercel Settings -> Environment Variables bo'limiga OPENROUTER_API_KEY ni qo'shgan bo'lishingiz shart
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
 client = OpenAI(
@@ -27,13 +26,15 @@ async def home_page():
 async def process_image(file: UploadFile = File(...)):
     try:
         image_data = await file.read()
+        # Rasmni bazaga o'tkazish
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
         prompt = """
-        Extract important English words and idioms from the image. 
-        Provide short Uzbek translations.
-        OUTPUT STRICTLY VALID JSON ONLY. NO OTHER TEXT.
-        Format: {"words": [{"en": "word", "uz": "tarjima"}], "idioms": [{"en": "idiom", "uz": "tarjima"}]}
+        ACT AS AN OCR AND TRANSLATOR. 
+        Extract English words and idioms from image. 
+        Translate to Uzbek.
+        RETURN ONLY JSON. NO CONVERSATION.
+        Example: {"words": [{"en": "apple", "uz": "olma"}], "idioms": []}
         """
         
         response = client.chat.completions.create(
@@ -47,26 +48,31 @@ async def process_image(file: UploadFile = File(...)):
                     ]
                 }
             ],
-            temperature=0.1
+            temperature=0.1,
+            max_tokens=1000
         )
         
-        result_text = response.choices[0].message.content or ""
+        raw_content = response.choices[0].message.content or ""
         
-        # JSONni tozalash va ajratib olish
-        start_idx = result_text.find('{')
-        end_idx = result_text.rfind('}')
+        # JSONNI QIDIRISH (REGEX)
+        # Bu qism matn ichidan faqat { ... } qismini qidirib topadi
+        match = re.search(r'(\{.*\})', raw_content, re.DOTALL)
         
-        if start_idx != -1 and end_idx != -1:
-            json_str = result_text[start_idx:end_idx+1]
-            json_str = re.sub(r'"\s*"uz"', '", "uz"', json_str) # Ba'zan AI vergulni unutsa tuzatadi
+        if match:
+            json_str = match.group(1)
+            # Ba'zan AI vergulni yoki qavsni xato qo'yadi, shuni tuzatishga urinish
+            json_str = re.sub(r',\s*}', '}', json_str) 
             
-            data = json.loads(json_str)
-            return {
-                "words": data.get("words", []),
-                "idioms": data.get("idioms", [])
-            }
+            try:
+                data = json.loads(json_str)
+                return {
+                    "words": data.get("words", []),
+                    "idioms": data.get("idioms", [])
+                }
+            except:
+                return {"error": "AI javobini o'qib bo'lmadi", "details": raw_content}
         else:
-            return {"error": "AI tushunarsiz javob berdi", "details": result_text}
+            return {"error": "AI matnni taniy olmadi", "details": raw_content}
 
     except Exception as e:
-        return {"error": "Server xatosi", "details": str(e)}
+        return {"error": "Ulanishda xatolik", "details": str(e)}
