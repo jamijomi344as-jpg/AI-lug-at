@@ -7,8 +7,8 @@ import traceback
 import os
 from google import genai
 
-# API KALITNI SHU YERGA YOZING (Qo'shtirnoqlar ichida)
-api_key = "BU_YERGA_GEMINI_KALITINGIZNI_QOYING"
+# Sizning haqiqiy kalitingiz kodga kiritildi
+api_key = "AIzaSyA_MDCoMuKHSepAqisoKBn6FJZ2Ef18UYQ"
 
 client = genai.Client(api_key=api_key)
 
@@ -28,7 +28,7 @@ async def process_image(file: UploadFile = File(...)):
         image_data = await file.read()
         image = Image.open(io.BytesIO(image_data))
 
-        # Gemini'ga to'g'ridan-to'g'ri rasmni va buyruqni beramiz (Tesseract shart emas!)
+        # Gemini'ga to'g'ridan-to'g'ri rasmni va buyruqni beramiz
         prompt = """
         Look at this image. Extract all the important English vocabulary words, idioms, and phrasal verbs found in the text within the image.
         Provide their Uzbek translations.
