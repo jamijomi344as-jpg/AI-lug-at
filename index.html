@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aqlli Lug'at Yordamchisi</title>
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <style>
+        .fade-out {
+            opacity: 0;
+            transform: scale(0.9);
+            transition: all 0.3s ease-out;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-8 font-sans">
+
+    <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold text-center text-blue-600 mb-6">Rasmdan Aqlli Lug'at</h1>
+        
+        <div class="flex flex-col items-center border-4 border-dashed border-gray-300 p-6 rounded-lg mb-8">
+            <input type="file" id="imageInput" accept="image/*" class="mb-4 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            <button onclick="uploadImage()" id="uploadBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition">Skaner Qilish</button>
+            <p id="loadingMsg" class="text-gray-500 mt-4 hidden">Sun'iy intellekt tahlil qilmoqda, kuting...</p>
+        </div>
+
+        <div class="mb-8">
+            <h2 class="text-xl font-bold text-gray-700 mb-4 border-b pb-2">Yakka So'zlar (Vocabulary)</h2>
+            <div id="wordsContainer" class="flex flex-wrap gap-3">
+                <p class="text-gray-400 italic text-sm">Hozircha bo'sh...</p>
+            </div>
+        </div>
+
+        <div>
+            <h2 class="text-xl font-bold text-gray-700 mb-4 border-b pb-2">Idiomalar va Iboralar (Phrases & Idioms)</h2>
+            <div id="idiomsContainer" class="flex flex-wrap gap-4">
+                <p class="text-gray-400 italic text-sm">Hozircha bo'sh...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function uploadImage() {
+            const fileInput = document.getElementById('imageInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert("Iltimos, avval rasm tanlang!");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const btn = document.getElementById('uploadBtn');
+            const loading = document.getElementById('loadingMsg');
+            const wordsContainer = document.getElementById('wordsContainer');
+            const idiomsContainer = document.getElementById('idiomsContainer');
+
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            loading.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/upload/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+
+                if (data.error) {
+                    alert("Xatolik: " + data.error + "\n\nAsl sabab:\n" + data.details);
+                } else {
+                    renderItems(data.words, wordsContainer, 'word');
+                    renderItems(data.idioms, idiomsContainer, 'idiom');
+                }
+            } catch (err) {
+                alert("Serverga ulanishda xatolik yuz berdi. Terminalni tekshiring.");
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                loading.classList.add('hidden');
+            }
+        }
+
+        function renderItems(items, container, type) {
+            container.innerHTML = '';
+            
+            if (!items || items.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 italic text-sm">Hech narsa topilmadi...</p>';
+                return;
+            }
+
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = "group relative cursor-pointer flex items-center justify-center transition-all duration-300";
+                
+                const baseClasses = type === 'idiom' 
+                    ? "bg-purple-100 border-purple-300 text-purple-800 px-5 py-3 text-lg" 
+                    : "bg-blue-100 border-blue-300 text-blue-800 px-4 py-2";
+
+                div.innerHTML = `
+                    <div class="border-2 rounded-lg font-medium shadow-sm hover:bg-gray-200 hover:text-gray-500 transition-colors ${baseClasses}">
+                        ${item.en}
+                    </div>
+                    <div class="absolute bottom-full mb-2 hidden group-hover:block w-max max-w-xs bg-gray-800 text-white text-sm px-3 py-1 rounded shadow-lg z-10 whitespace-normal text-center">
+                        ${item.uz}
+                    </div>
+                `;
+
+                div.onclick = function() {
+                    div.classList.add('fade-out');
+                    setTimeout(() => div.remove(), 300);
+                };
+
+                container.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>
