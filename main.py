@@ -9,7 +9,6 @@ from openai import OpenAI
 # Kalit Vercel sozlamalaridan xavfsiz olinadi (OPENROUTER_API_KEY)
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
-# OpenRouter tizimiga ulanish
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=api_key,
@@ -39,7 +38,6 @@ async def process_image(file: UploadFile = File(...)):
         }
         """
         
-        # Siz topgan aniq Llama 3.2 Vision modeli
         response = client.chat.completions.create(
             model="meta-llama/llama-3.2-11b-vision-instruct",
             messages=[
@@ -58,8 +56,11 @@ async def process_image(file: UploadFile = File(...)):
             ]
         )
         
-        result_text = response.choices[0].message.content.strip()
+        # AI dan kelgan asl javobni ajratib olish
+        result_text = response.choices[0].message.content or ""
+        result_text = result_text.strip()
         
+        # Keraksiz belgilarni tozalash
         if result_text.startswith("```json"):
             result_text = result_text[7:]
         elif result_text.startswith("```"):
@@ -68,11 +69,21 @@ async def process_image(file: UploadFile = File(...)):
         if result_text.endswith("```"):
             result_text = result_text[:-3]
             
-        data = json.loads(result_text.strip())
-        return data
+        result_text = result_text.strip()
+        
+        # MANA SHU YERDA XATONI TUTIB OLAMIZ:
+        try:
+            data = json.loads(result_text)
+            return data
+        except json.JSONDecodeError:
+            # Agar JSON bo'lmasa, AI nima yozganini to'g'ridan-to'g'ri ekranga chiqaramiz
+            return {
+                "error": "AI biz kutgan JSON formatida javob bermadi", 
+                "details": f"AI aslida shunday deb yozdi: \n\n{result_text}"
+            }
 
     except Exception as e:
         print("\n=== XATOLIK TAFSILOTI ===")
         traceback.print_exc()
         print("=========================\n")
-        return {"error": "Serverda xatolik yuz berdi", "details": str(e)}
+        return {"error": "Serverda ulanish xatosi", "details": str(e)}
