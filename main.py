@@ -2,7 +2,9 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import asyncio
-import requests
+import google.generativeai as genai
+from pyrogram import Client, filters, idle
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 # --- 1. RENDER.COM UCHUN ALDOVCHI SERVER ---
 class DummyServer(BaseHTTPRequestHandler):
@@ -26,61 +28,21 @@ except RuntimeError:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-from pyrogram import Client, filters, idle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from deep_translator import GoogleTranslator
-
 # --- 3. SOZLAMALAR ---
 API_ID = 36053423
 API_HASH = "82f39002cfa480485590bf961e20bf55"
 BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
+GEMINI_API_KEY = "AIzaSyC1tsZPNB2QT2dw4_15yb96sORG6Z-NB-A" # <--- DIQQAT! O'zingizning API kalitingizni yozing
+
+# Gemini sozlamalari
+genai.configure(api_key=GEMINI_API_KEY)
+# Eng tez va matn uchun qulay modelni tanlaymiz
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 user_modes = {}
 
 # --- 4. FUNKSIYALAR ---
-def get_details(word):
-    """Inglizcha so'zning ta'riflari va misollarini aqlli va tartibli izlash"""
-    url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
-    try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()[0]
-            phonetic = data.get('phonetic', 'N/A')
-            
-            meanings_text = ""
-            synonyms_set = set()
-
-            # Barcha ma'nolarni (maksimum 3 xilini) alohida ajratib olamiz
-            for meaning in data['meanings'][:3]:
-                part_of_speech = meaning.get('partOfSpeech', 'bilinmaydi')
-                def_obj = meaning['definitions'][0] # Shu guruhning eng asosiy ma'nosi
-                
-                definition = def_obj.get('definition', '')
-                example = def_obj.get('example', '')
-                
-                # Matnni chiroyli qilib yig'amiz
-                meanings_text += f"\n🔹 **{part_of_speech.capitalize()}**: {definition}\n"
-                if example:
-                    meanings_text += f"   _💡 Misol: {example}_\n"
-                    
-                # Sinonimlarni yig'ish (faqat mavjudlarini)
-                for syn in meaning.get('synonyms', []):
-                    synonyms_set.add(syn)
-
-            # Sinonimlardan faqat 5 tasini ko'rsatamiz
-            syns = list(synonyms_set)[:5]
-
-            return {
-                "ok": True,
-                "phonetic": phonetic,
-                "meanings_text": meanings_text if meanings_text else "\nTopilmadi",
-                "synonyms": ", ".join(syns) if syns else "Mavjud emas"
-            }
-        return {"ok": False}
-    except:
-        return {"ok": False}
-
 def get_keyboard(user_id):
     mode = user_modes.get(user_id, "en_uz")
     btn_text = "🔄 Inglizcha ➡️ O'zbekcha" if mode == "en_uz" else "🔄 O'zbekcha ➡️ Inglizcha"
@@ -95,8 +57,8 @@ async def start(client, message):
     user_id = message.from_user.id
     user_modes[user_id] = "en_uz"
     await message.reply_text(
-        "👋 **Salom! Men aqlli lug'at botiman.**\n\n"
-        "Menga so'z yuboring. Tarjima yo'nalishini quyidagi tugma orqali o'zgartirishingiz mumkin:",
+        "👋 **Salom! Men Sun'iy Intellekt bilan ishlaydigan aqlli lug'at botiman.**\n\n"
+        "Men so'zlarning shunchaki tarjimasini emas, balki aniq ma'nosini va akademik misollarini keltiraman. Menga so'z yuboring:",
         reply_markup=get_keyboard(user_id)
     )
 
@@ -116,43 +78,46 @@ async def handle_message(client, message):
     user_id = message.from_user.id
     mode = user_modes.get(user_id, "en_uz")
     
-    if len(word.split()) > 3: 
+    if len(word.split()) > 4: 
         await message.reply_text("Iltimos, qisqaroq so'z yoki ibora yuboring.")
         return
     
-    wait_msg = await message.reply_text("🔍 Qidirilmoqda...")
+    wait_msg = await message.reply_text("🧠 Sun'iy intellekt o'ylamoqda...")
     
+    # Gemini uchun Maxsus Prompt (Buyruq)
+    yo_nalish = "Inglizchadan O'zbekchaga" if mode == "en_uz" else "O'zbekchadan Inglizchaga"
+    
+    prompt = f"""
+    Sen professional ingliz-o'zbek lug'ati va til o'rganish bo'yicha ekspert bot rolidasan. 
+    Foydalanuvchi quyidagi so'z/iborani yubordi: "{word}"
+    Tarjima yo'nalishi: {yo_nalish}.
+
+    Vazifang:
+    1. So'zning aynan foydalanuvchi nazarda tutgan eng asosiy ma'nosini topish.
+    2. Tarjimani oson, tabiiy, ammo akademik darajada (IELTS kabi imtihonlarga mos sifatli so'z boyligi bilan) ko'rsatish.
+    
+    Javobni AYNAN quyidagi formatda, ortiqcha gaplarsiz qaytar:
+    🔤 **Inglizcha**: [So'zning inglizcha varianti]
+    🇺🇿 **O'zbekcha**: [So'zning o'zbekcha tarjimasi]
+    🗣 **Transkripsiya**: [Xalqaro transkripsiya, masalan /wɜːrd/]
+    📖 **Ta'rif (Def)**: [Ingliz tilidagi oson va qisqa ta'rifi]
+    💡 **Misol**: [IELTS darajasidagi, ammo tushunarli sifatli inglizcha gap] - [Shu gapning o'zbekcha tarjimasi]
+    🔗 **Sinonimlar**: [3-4 ta eng aniq va mos inglizcha sinonimlar]
+    """
+
     try:
-        word_to_translate = word.lower()
-
-        if mode == "en_uz":
-            uz_translation = GoogleTranslator(source='en', target='uz').translate(word_to_translate)
-            en_word, uz_word = word, uz_translation
-        else:
-            en_translation = GoogleTranslator(source='uz', target='en').translate(word_to_translate)
-            en_word, uz_word = en_translation, word
-
-        details = get_details(en_word)
-
-        text = f"🔤 **Inglizcha**: `{en_word.capitalize()}`\n"
-        text += f"🇺🇿 **O'zbekcha**: `{uz_word.capitalize()}`\n\n"
+        # Asinxron so'rov yuborish (bot qotib qolmasligi uchun)
+        response = await model.generate_content_async(prompt)
+        ai_text = response.text
         
-        if details["ok"]:
-            text += f"🗣 **Transkripsiya**: `{details['phonetic']}`\n"
-            text += f"📖 **Ma'nolari**:{details['meanings_text']}\n\n"
-            text += f"🔗 **Sinonimlar**: {details['synonyms']}"
-        else:
-            if mode == "uz_en":
-                text += "⚠️ _Inglizcha ta'rif topilmadi._"
-        
-        await wait_msg.edit_text(text, reply_markup=get_keyboard(user_id))
+        await wait_msg.edit_text(ai_text, reply_markup=get_keyboard(user_id))
     except Exception as e:
         await wait_msg.edit_text(f"Xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring.\n`{e}`")
 
 # --- 6. ISHGA TUSHIRISH ---
 async def main():
     async with app:
-        print("✅ Bot muvaffaqiyatli ishga tushdi!")
+        print("✅ AI Bot muvaffaqiyatli ishga tushdi!")
         await idle()
 
 if __name__ == "__main__":
