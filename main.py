@@ -34,7 +34,7 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 API_ID = 36053423
 API_HASH = "82f39002cfa480485590bf961e20bf55"
 BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
-GEMINI_API_KEY = "SHU_YERGA_GEMINI_KALITINGIZNI_QOYING" # <-- Kalitni kiritishni unutmang!
+GEMINI_API_KEY = "AIzaSyC1tsZPNB2QT2dw4_15yb96sORG6Z-NB-A" # <-- Kalitni kiritishni unutmang!
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
