@@ -26,19 +26,21 @@ async def home_page():
 async def process_image(file: UploadFile = File(...)):
     try:
         image_data = await file.read()
-        # Rasmni bazaga o'tkazish
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
+        # Modelni Gemini 1.5 Flash ga o'zgartirdik (U rasmni zo'r ko'radi)
+        # Promptni ham aniqlashtirdik
         prompt = """
-        ACT AS AN OCR AND TRANSLATOR. 
-        Extract English words and idioms from image. 
-        Translate to Uzbek.
-        RETURN ONLY JSON. NO CONVERSATION.
-        Example: {"words": [{"en": "apple", "uz": "olma"}], "idioms": []}
+        OCR AND TRANSLATE TASK:
+        1. Scan the image and find ALL English words, phrases, and idioms.
+        2. Translate them accurately into Uzbek.
+        3. Do NOT add any words that are not in the image (like 'apple').
+        4. Return ONLY a JSON object. No conversation.
+        Format: {"words": [{"en": "text from image", "uz": "tarjimasi"}], "idioms": []}
         """
         
         response = client.chat.completions.create(
-            model="meta-llama/llama-3.2-11b-vision-instruct",
+            model="google/gemini-flash-1.5-8b", # Yoki "google/gemini-flash-1.5"
             messages=[
                 {
                     "role": "user",
@@ -48,31 +50,27 @@ async def process_image(file: UploadFile = File(...)):
                     ]
                 }
             ],
-            temperature=0.1,
-            max_tokens=1000
+            temperature=0.1
         )
         
         raw_content = response.choices[0].message.content or ""
         
-        # JSONNI QIDIRISH (REGEX)
-        # Bu qism matn ichidan faqat { ... } qismini qidirib topadi
+        # JSONni ajratib olish uchun regex
         match = re.search(r'(\{.*\})', raw_content, re.DOTALL)
         
         if match:
             json_str = match.group(1)
-            # Ba'zan AI vergulni yoki qavsni xato qo'yadi, shuni tuzatishga urinish
-            json_str = re.sub(r',\s*}', '}', json_str) 
-            
             try:
                 data = json.loads(json_str)
+                # Agar AI barcha so'zlarni bitta massivga tiqib yuborsa ham ishlaydi
                 return {
                     "words": data.get("words", []),
                     "idioms": data.get("idioms", [])
                 }
             except:
-                return {"error": "AI javobini o'qib bo'lmadi", "details": raw_content}
+                return {"error": "AI javobi formatga tushmadi", "details": raw_content}
         else:
-            return {"error": "AI matnni taniy olmadi", "details": raw_content}
+            return {"error": "Rasmda matn topilmadi", "details": raw_content}
 
     except Exception as e:
-        return {"error": "Ulanishda xatolik", "details": str(e)}
+        return {"error": "Ulanish xatosi", "details": str(e)}
