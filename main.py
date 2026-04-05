@@ -40,7 +40,7 @@ async def process_image(file: UploadFile = File(...)):
         """
         
         response = client.chat.completions.create(
-            model="google/gemini-flash-1.5-8b", # Yoki "google/gemini-flash-1.5"
+        model="google/gemini-flash-1.5",
             messages=[
                 {
                     "role": "user",
