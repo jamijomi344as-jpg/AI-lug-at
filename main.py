@@ -6,7 +6,7 @@ import traceback
 import os
 from groq import Groq
 
-# KALIT KODDAN OLIB TASHLANDI! U endi Vercel'ning maxfiy sozlamalaridan olinadi.
+# Kalit xavfsiz tarzda Vercel sozlamalaridan olinadi
 api_key = os.environ.get("GROQ_API_KEY")
 
 client = Groq(api_key=api_key)
@@ -50,7 +50,8 @@ async def process_image(file: UploadFile = File(...)):
                     ]
                 }
             ],
-            model="llama-3.2-11b-vision-preview",
+            # MANA SHU QATOR YANGILANDI: Rasmiy va barqaror model nomi
+            model="llama-3.2-11b-vision-instruct",
         )
         
         result_text = chat_completion.choices[0].message.content.strip()
