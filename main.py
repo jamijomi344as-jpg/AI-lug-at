@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import asyncio
 import requests
 
-# --- 1. RENDER.COM UCHUN ALDOVCHI SERVER (0.0.0.0 IP bilan) ---
+# --- 1. RENDER.COM UCHUN ALDOVCHI SERVER ---
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -17,11 +17,9 @@ def run_dummy_server():
     server = HTTPServer(("0.0.0.0", port), DummyServer)
     server.serve_forever()
 
-# Serverni orqa fonda ishga tushiramiz
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-
-# --- 2. PYROGRAM XATOSINI OLDINI OLISH (Python 3.14+ uchun) ---
+# --- 2. PYROGRAM XATOSINI OLDINI OLISH ---
 try:
     loop = asyncio.get_event_loop()
 except RuntimeError:
@@ -38,54 +36,64 @@ API_HASH = "82f39002cfa480485590bf961e20bf55"
 BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
 
 app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# Foydalanuvchilarning qaysi tilda ekanligini saqlash uchun lug'at
 user_modes = {}
-
 
 # --- 4. FUNKSIYALAR ---
 def get_details(word):
-    """Inglizcha so'zning ta'rifi va misollarini API dan olish"""
+    """Inglizcha so'zning ta'riflari va misollarini aqlli va tartibli izlash"""
     url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()[0]
             phonetic = data.get('phonetic', 'N/A')
-            meanings = data['meanings'][0]['definitions'][0]
-            syns = data['meanings'][0].get('synonyms', [])
+            
+            meanings_text = ""
+            synonyms_set = set()
+
+            # Barcha ma'nolarni (maksimum 3 xilini) alohida ajratib olamiz
+            for meaning in data['meanings'][:3]:
+                part_of_speech = meaning.get('partOfSpeech', 'bilinmaydi')
+                def_obj = meaning['definitions'][0] # Shu guruhning eng asosiy ma'nosi
+                
+                definition = def_obj.get('definition', '')
+                example = def_obj.get('example', '')
+                
+                # Matnni chiroyli qilib yig'amiz
+                meanings_text += f"\n🔹 **{part_of_speech.capitalize()}**: {definition}\n"
+                if example:
+                    meanings_text += f"   _💡 Misol: {example}_\n"
+                    
+                # Sinonimlarni yig'ish (faqat mavjudlarini)
+                for syn in meaning.get('synonyms', []):
+                    synonyms_set.add(syn)
+
+            # Sinonimlardan faqat 5 tasini ko'rsatamiz
+            syns = list(synonyms_set)[:5]
+
             return {
                 "ok": True,
                 "phonetic": phonetic,
-                "definition": meanings.get('definition', 'Topilmadi'),
-                "example": meanings.get('example', 'Mavjud emas'),
-                "synonyms": ", ".join(syns[:5]) if syns else "Mavjud emas"
+                "meanings_text": meanings_text if meanings_text else "\nTopilmadi",
+                "synonyms": ", ".join(syns) if syns else "Mavjud emas"
             }
         return {"ok": False}
     except:
         return {"ok": False}
 
 def get_keyboard(user_id):
-    """Foydalanuvchi holatiga qarab tugma yaratish"""
     mode = user_modes.get(user_id, "en_uz")
-    
-    if mode == "en_uz":
-        btn_text = "🔄 Inglizcha ➡️ O'zbekcha"
-    else:
-        btn_text = "🔄 O'zbekcha ➡️ Inglizcha"
-        
+    btn_text = "🔄 Inglizcha ➡️ O'zbekcha" if mode == "en_uz" else "🔄 O'zbekcha ➡️ Inglizcha"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(btn_text, callback_data="toggle_mode")],
         [InlineKeyboardButton("📚 Dasturchi bilan aloqa", url="https://t.me/durov")]
     ])
 
-
 # --- 5. BOT BUYRUQLARI ---
 @app.on_message(filters.command("start"))
 async def start(client, message):
     user_id = message.from_user.id
-    user_modes[user_id] = "en_uz" # Standart holat
-    
+    user_modes[user_id] = "en_uz"
     await message.reply_text(
         "👋 **Salom! Men aqlli lug'at botiman.**\n\n"
         "Menga so'z yuboring. Tarjima yo'nalishini quyidagi tugma orqali o'zgartirishingiz mumkin:",
@@ -94,21 +102,13 @@ async def start(client, message):
 
 @app.on_callback_query(filters.regex("toggle_mode"))
 async def toggle_mode(client, callback_query: CallbackQuery):
-    """Tugma bosilganda tilni o'zgartirish"""
     user_id = callback_query.from_user.id
     current_mode = user_modes.get(user_id, "en_uz")
-    
-    # Tilni almashtirish
     new_mode = "uz_en" if current_mode == "en_uz" else "en_uz"
     user_modes[user_id] = new_mode
-    
     text = "✅ **O'zbekchadan Inglizchaga**" if new_mode == "uz_en" else "✅ **Inglizchadan O'zbekchaga**"
-    
     await callback_query.answer("Til o'zgartirildi!", show_alert=False)
-    await callback_query.message.edit_text(
-        f"{text}\n\nMenga so'z yuboring:", 
-        reply_markup=get_keyboard(user_id)
-    )
+    await callback_query.message.edit_text(f"{text}\n\nMenga so'z yuboring:", reply_markup=get_keyboard(user_id))
 
 @app.on_message(filters.text & filters.private)
 async def handle_message(client, message):
@@ -123,29 +123,23 @@ async def handle_message(client, message):
     wait_msg = await message.reply_text("🔍 Qidirilmoqda...")
     
     try:
-        # Tarjima qilish
-        if mode == "en_uz":
-            translator = GoogleTranslator(source='en', target='uz')
-            uz_translation = translator.translate(word)
-            en_word = word
-            uz_word = uz_translation
-        else:
-            translator = GoogleTranslator(source='uz', target='en')
-            en_translation = translator.translate(word)
-            en_word = en_translation
-            uz_word = word
+        word_to_translate = word.lower()
 
-        # Inglizcha so'zning ta'rifini olish
+        if mode == "en_uz":
+            uz_translation = GoogleTranslator(source='en', target='uz').translate(word_to_translate)
+            en_word, uz_word = word, uz_translation
+        else:
+            en_translation = GoogleTranslator(source='uz', target='en').translate(word_to_translate)
+            en_word, uz_word = en_translation, word
+
         details = get_details(en_word)
 
-        # Matnni chiroyli qilib shakllantirish
         text = f"🔤 **Inglizcha**: `{en_word.capitalize()}`\n"
         text += f"🇺🇿 **O'zbekcha**: `{uz_word.capitalize()}`\n\n"
         
         if details["ok"]:
             text += f"🗣 **Transkripsiya**: `{details['phonetic']}`\n"
-            text += f"📖 **Ta'rif (Def)**: {details['definition']}\n"
-            text += f"💡 **Misol**: _{details['example']}_\n"
+            text += f"📖 **Ma'nolari**:{details['meanings_text']}\n\n"
             text += f"🔗 **Sinonimlar**: {details['synonyms']}"
         else:
             if mode == "uz_en":
@@ -155,11 +149,10 @@ async def handle_message(client, message):
     except Exception as e:
         await wait_msg.edit_text(f"Xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring.\n`{e}`")
 
-
 # --- 6. ISHGA TUSHIRISH ---
 async def main():
     async with app:
-        print("✅ Bot muvaffaqiyatli ishga tushdi va xabarlarni kutyapti!")
+        print("✅ Bot muvaffaqiyatli ishga tushdi!")
         await idle()
 
 if __name__ == "__main__":
