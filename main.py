@@ -4,9 +4,9 @@ import base64
 import json
 import traceback
 import os
+import re
 from openai import OpenAI
 
-# Kalit Vercel sozlamalaridan xavfsiz olinadi (OPENROUTER_API_KEY)
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
 client = OpenAI(
@@ -28,13 +28,17 @@ async def process_image(file: UploadFile = File(...)):
         image_data = await file.read()
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
+        # AI ga juda qattiq buyruq beramiz
         prompt = """
-        Look at this image. Extract all the important English vocabulary words, idioms, and phrasal verbs found in the text within the image.
+        Look at this image. Extract all the important English vocabulary words and idioms.
         Provide their Uzbek translations.
-        Return ONLY a valid JSON in this exact format, with no markdown formatting like ```json, no extra text:
+        WARNING: YOU MUST OUTPUT EXACTLY AND ONLY A VALID JSON OBJECT. 
+        NO EXPLANATORY TEXT. NO INTRODUCTIONS. DO NOT FORGET COMMAS BETWEEN ITEMS.
+        Only use 'words' and 'idioms' keys.
+        Format EXACTLY like this:
         {
             "words": [{"en": "word", "uz": "tarjima"}],
-            "idioms": [{"en": "idiom phrase", "uz": "tarjima"}]
+            "idioms": [{"en": "idiom", "uz": "tarjima"}]
         }
         """
         
@@ -53,34 +57,41 @@ async def process_image(file: UploadFile = File(...)):
                         }
                     ]
                 }
-            ]
+            ],
+            temperature=0.1 # Xato qilmasligi uchun aniqlikni oshirdik
         )
         
-        # AI dan kelgan asl javobni ajratib olish
         result_text = response.choices[0].message.content or ""
-        result_text = result_text.strip()
         
-        # Keraksiz belgilarni tozalash
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        elif result_text.startswith("```"):
-            result_text = result_text[3:]
-            
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
-            
-        result_text = result_text.strip()
+        # 1. Ortiqcha gap-so'zlarni kesib tashlab, faqat { va } orasidagi JSON ni olish
+        start_idx = result_text.find('{')
+        end_idx = result_text.rfind('}')
         
-        # MANA SHU YERDA XATONI TUTIB OLAMIZ:
-        try:
-            data = json.loads(result_text)
-            return data
-        except json.JSONDecodeError:
-            # Agar JSON bo'lmasa, AI nima yozganini to'g'ridan-to'g'ri ekranga chiqaramiz
-            return {
-                "error": "AI biz kutgan JSON formatida javob bermadi", 
-                "details": f"AI aslida shunday deb yozdi: \n\n{result_text}"
-            }
+        if start_idx != -1 and end_idx != -1:
+            json_str = result_text[start_idx:end_idx+1]
+            
+            # 2. Llama unutgan vergullarni avtomatik tuzatish (regex sehr-jodusi)
+            json_str = re.sub(r'"\s*"uz"', '", "uz"', json_str)
+            
+            try:
+                data = json.loads(json_str)
+                
+                # Agar u yana ahmoqlik qilib boshqa bo'lim qo'shsa, faqat keragini olamiz
+                clean_data = {
+                    "words": data.get("words", []),
+                    "idioms": data.get("idioms", [])
+                }
+                
+                # Agar phrasalverbs qo'shgan bo'lsa, uni idioms ga qo'shib yuboramiz
+                if "phrasalverbs" in data:
+                    clean_data["idioms"].extend(data["phrasalverbs"])
+                    
+                return clean_data
+                
+            except json.JSONDecodeError as e:
+                return {"error": "AI javobi noto'g'ri chiqdi", "details": str(e) + f"\n\nJSON qismi: {json_str}"}
+        else:
+            return {"error": "AI javobida JSON topilmadi", "details": result_text}
 
     except Exception as e:
         print("\n=== XATOLIK TAFSILOTI ===")
