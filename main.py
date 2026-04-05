@@ -1,22 +1,20 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import HTMLResponse
-from PIL import Image
-import io
+import base64
 import json
 import traceback
 import os
-from google import genai
+from groq import Groq
 
-# Sizning haqiqiy kalitingiz kodga kiritildi
-api_key = "AIzaSyA_MDCoMuKHSepAqisoKBn6FJZ2Ef18UYQ"
+# KALIT KODDAN OLIB TASHLANDI! U endi Vercel'ning maxfiy sozlamalaridan olinadi.
+api_key = os.environ.get("GROQ_API_KEY")
 
-client = genai.Client(api_key=api_key)
+client = Groq(api_key=api_key)
 
 app = FastAPI()
 
 @app.get("/", response_class=HTMLResponse)
 async def home_page():
-    # Vercel serverlarida fayl manzilini to'g'ri topish uchun
     base_dir = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(base_dir, "index.html"), "r", encoding="utf-8") as f:
         return f.read()
@@ -24,11 +22,9 @@ async def home_page():
 @app.post("/upload/")
 async def process_image(file: UploadFile = File(...)):
     try:
-        # Rasmni qabul qilish
         image_data = await file.read()
-        image = Image.open(io.BytesIO(image_data))
+        base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        # Gemini'ga to'g'ridan-to'g'ri rasmni va buyruqni beramiz
         prompt = """
         Look at this image. Extract all the important English vocabulary words, idioms, and phrasal verbs found in the text within the image.
         Provide their Uzbek translations.
@@ -39,14 +35,25 @@ async def process_image(file: UploadFile = File(...)):
         }
         """
         
-        # Gemini 2.0 Flash ga rasmni o'zini yuborish
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[image, prompt],
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            model="llama-3.2-11b-vision-preview",
         )
         
-        # Javobni tozalash va JSON ga o'girish
-        result_text = response.text.strip()
+        result_text = chat_completion.choices[0].message.content.strip()
         
         if result_text.startswith("```json"):
             result_text = result_text[7:]
