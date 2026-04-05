@@ -28,18 +28,13 @@ async def process_image(file: UploadFile = File(...)):
         image_data = await file.read()
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        # AI ga juda qattiq buyruq beramiz
+        # Tezroq javob olish uchun aniq va qisqa buyruq
         prompt = """
-        Look at this image. Extract all the important English vocabulary words and idioms.
-        Provide their Uzbek translations.
-        WARNING: YOU MUST OUTPUT EXACTLY AND ONLY A VALID JSON OBJECT. 
-        NO EXPLANATORY TEXT. NO INTRODUCTIONS. DO NOT FORGET COMMAS BETWEEN ITEMS.
-        Only use 'words' and 'idioms' keys.
-        Format EXACTLY like this:
-        {
-            "words": [{"en": "word", "uz": "tarjima"}],
-            "idioms": [{"en": "idiom", "uz": "tarjima"}]
-        }
+        Extract important English words and idioms from the image. 
+        Provide Uzbek translations.
+        OUTPUT STRICTLY VALID JSON ONLY. NO OTHER TEXT. FAST OUTPUT.
+        Format:
+        {"words": [{"en": "word", "uz": "tarjima"}], "idioms": [{"en": "idiom", "uz": "tarjima"}]}
         """
         
         response = client.chat.completions.create(
@@ -58,43 +53,32 @@ async def process_image(file: UploadFile = File(...)):
                     ]
                 }
             ],
-            temperature=0.1 # Xato qilmasligi uchun aniqlikni oshirdik
+            temperature=0.1
         )
         
         result_text = response.choices[0].message.content or ""
         
-        # 1. Ortiqcha gap-so'zlarni kesib tashlab, faqat { va } orasidagi JSON ni olish
         start_idx = result_text.find('{')
         end_idx = result_text.rfind('}')
         
         if start_idx != -1 and end_idx != -1:
             json_str = result_text[start_idx:end_idx+1]
-            
-            # 2. Llama unutgan vergullarni avtomatik tuzatish (regex sehr-jodusi)
             json_str = re.sub(r'"\s*"uz"', '", "uz"', json_str)
             
             try:
                 data = json.loads(json_str)
-                
-                # Agar u yana ahmoqlik qilib boshqa bo'lim qo'shsa, faqat keragini olamiz
                 clean_data = {
                     "words": data.get("words", []),
                     "idioms": data.get("idioms", [])
                 }
-                
-                # Agar phrasalverbs qo'shgan bo'lsa, uni idioms ga qo'shib yuboramiz
                 if "phrasalverbs" in data:
                     clean_data["idioms"].extend(data["phrasalverbs"])
-                    
                 return clean_data
                 
             except json.JSONDecodeError as e:
-                return {"error": "AI javobi noto'g'ri chiqdi", "details": str(e) + f"\n\nJSON qismi: {json_str}"}
+                return {"error": "JSON xatosi", "details": str(e) + f"\n\nJSON qismi: {json_str}"}
         else:
-            return {"error": "AI javobida JSON topilmadi", "details": result_text}
+            return {"error": "JSON topilmadi", "details": result_text}
 
     except Exception as e:
-        print("\n=== XATOLIK TAFSILOTI ===")
-        traceback.print_exc()
-        print("=========================\n")
-        return {"error": "Serverda ulanish xatosi", "details": str(e)}
+        return {"error": "Serverda xato", "details": str(e)}
