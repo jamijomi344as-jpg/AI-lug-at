@@ -6,7 +6,6 @@ import os
 import re
 from openai import OpenAI
 
-# API kalit Vercel Environment Variables'dan olinadi
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
 client = OpenAI(
@@ -28,19 +27,25 @@ async def process_image(file: UploadFile = File(...)):
         image_data = await file.read()
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        prompt = "Extract English words and idioms from image. Translate to Uzbek. Return ONLY JSON: {\"words\": [{\"en\": \"...\", \"uz\": \"...\"}], \"idioms\": []}"
+        # Modelga qat'iy buyruq: so'zlarni lug'at shaklida qaytar (Lemmatization)
+        prompt = """
+        OCR AND ANALYZE: 
+        1. Find English words, phrasal verbs, and idioms. 
+        2. Convert verbs to base form (e.g., 'running' -> 'run').
+        3. Translate to Uzbek. 
+        4. Return ONLY JSON: {"words": [{"en": "run", "uz": "yugurmoq"}], "idioms": []}
+        """
         
         response = client.chat.completions.create(
             model="google/gemini-flash-1.5-8b", 
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                    ]
-                }
-            ]
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                ]
+            }],
+            temperature=0.1
         )
         
         raw_content = response.choices[0].message.content or ""
@@ -48,7 +53,7 @@ async def process_image(file: UploadFile = File(...)):
         
         if match:
             return json.loads(match.group(1))
-        return {"error": "Matn topilmadi", "details": raw_content}
+        return {"error": "Matn topilmadi"}
 
     except Exception as e:
-        return {"error": "Ulanishda xato yuz berdi", "details": str(e)}
+        return {"error": "Server xatosi", "details": str(e)}
