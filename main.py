@@ -4,6 +4,7 @@ import asyncio
 import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from gtts import gTTS
+from deep_translator import GoogleTranslator
 
 # --- 1. PYROGRAM MOTORINI ISHGA TUSHIRISH ---
 try:
@@ -34,7 +35,6 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 API_ID = 36053423
 API_HASH = "82f39002cfa480485590bf961e20bf55"
 BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
-GEMINI_API_KEY = "AIzaSyC72VvxxboViR-c2kuzoK2_PFGkVP4IFsM" 
 
 app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) 
 
@@ -49,11 +49,11 @@ def get_keyboard(audio_word=None):
 @app.on_message(filters.command("start"))
 async def start(client, message):
     await message.reply_text(
-        "👋 **Salom! Men sizning Shaxsiy AI Lug'at botingizman.**\n\n"
-        "Menga xohlagan o'zbekcha yoki inglizcha so'zingizni yuboring. Men uning **aniq ma'nosini**, o'qilishini, misolini va audiosini darhol topib beraman!"
+        "👋 **Salom! Men sizning Lug'at botingizman.**\n\n"
+        "Menga xohlagan o'zbekcha yoki inglizcha so'zingizni yuboring. Men uning tarjimasini, ta'rifini va audiosini topib beraman!"
     )
 
-# --- 5. OVOZ YASASH FUNKSIYASI ---
+# --- 5. OVOZ YASASH FUNKSIYASI (gTTS) ---
 @app.on_callback_query(filters.regex(r"^audio_"))
 async def send_audio(client, callback_query: CallbackQuery):
     word = callback_query.data.split("_", 1)[1]
@@ -68,71 +68,96 @@ async def send_audio(client, callback_query: CallbackQuery):
     except Exception as e:
         await callback_query.message.reply_text("⚠️ Ovozni yasashda xatolik yuz berdi.")
 
-# --- 6. AQLLI TARJIMA (BeVosita API orqali, v1beta manzili bilan) ---
+# --- 6. KLASSIK LUG'AT FUNKSIYASI ---
+def get_dictionary_info(word):
+    """Tekin Free Dictionary API orqali so'z ma'lumotlarini olish"""
+    url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code != 200:
+            return None
+        data = res.json()[0]
+        
+        # Transkripsiya
+        phonetic = data.get("phonetic", "")
+        if not phonetic:
+            for phon in data.get("phonetics", []):
+                if "text" in phon and phon["text"]:
+                    phonetic = phon["text"]
+                    break
+                    
+        meanings = data.get("meanings", [])
+        if not meanings:
+            return None
+            
+        # Ta'rif, misol va sinonimlar
+        definition, example, synonyms = "", "", []
+        
+        for meaning in meanings:
+            for def_dict in meaning.get("definitions", []):
+                if not definition:
+                    definition = def_dict.get("definition", "")
+                if not example and "example" in def_dict:
+                    example = def_dict.get("example", "")
+            if not synonyms and meaning.get("synonyms"):
+                synonyms = meaning.get("synonyms")[:3]
+                
+        return {
+            "phonetic": phonetic,
+            "definition": definition,
+            "example": example,
+            "synonyms": ", ".join(synonyms) if synonyms else "Topilmadi"
+        }
+    except Exception:
+        return None
+
 @app.on_message(filters.text & filters.private & ~filters.command("start"))
 async def handle_message(client, message):
-    word = message.text.strip()
+    text = message.text.strip()
     
-    if len(word.split()) > 5: 
+    if len(text.split()) > 5: 
         return 
     
-    wait_msg = await message.reply_text("🧠 Sun'iy intellekt tahlil qilmoqda...")
-    
-    prompt = f"""
-    Sen professional va aqlli ingliz-o'zbek lug'atbotisan. 
-    Foydalanuvchi quyidagi so'zni yubordi: "{word}"
-
-    Vazifang:
-    1. Agar so'z o'zbek tilida bo'lsa (masalan "maktub"), uning inglizcha tarjimasini top ("letter").
-    2. DIQQAT: Inglizcha so'zning KO'P MA'NOLARI BO'LSA, FAQAT foydalanuvchi yuborgan o'zbekcha so'zga mos keladigan ma'nosini ol!
-    3. Ta'rif, misol va sinonimlar AYNAN SHU TANLANGAN MA'NOGA mos bo'lishi shart.
-    
-    Javobni AYNAN quyidagi formatda, ortiqcha gaplarsiz qaytar. Boshida va oxirida hechnarsa yozma:
-    [{word}_EN]
-    🔤 **Inglizcha**: [Inglizcha so'z]
-    🇺🇿 **O'zbekcha**: [O'zbekcha so'z]
-    🗣 **Transkripsiya**: [Xalqaro talaffuzi]
-    📖 **Ta'rif (Def)**: [Inglizcha oson ta'rifi]
-    💡 **Misol**: [Akademik va tushunarli sifatli inglizcha gap] - [O'zbekcha tarjimasi]
-    🔗 **Sinonimlar**: [3-4 ta mos inglizcha sinonim]
-    """
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
+    wait_msg = await message.reply_text("🔍 Qidirilmoqda...")
     
     try:
-        res = await asyncio.to_thread(requests.post, url, json=payload, timeout=20)
-        data = res.json()
+        # 1. So'zni Ingliz tiliga o'giramiz
+        translator_to_en = GoogleTranslator(source='auto', target='en')
+        english_word = translator_to_en.translate(text).lower()
         
-        if res.status_code != 200:
-            error_msg = data.get('error', {}).get('message', 'Noma`lum xato yuz berdi.')
-            await wait_msg.edit_text(f"⚠️ API xatosi:\n`{error_msg}`")
-            return
+        # 2. Inglizcha so'zni O'zbek tiliga qayta o'giramiz (to'g'ri tarjima olish uchun)
+        translator_to_uz = GoogleTranslator(source='en', target='uz')
+        uzbek_word = translator_to_uz.translate(english_word).lower()
+        
+        # 3. Inglizcha so'zning ta'riflarini tekin bazadan qidiramiz
+        dict_info = get_dictionary_info(english_word)
+        
+        response_text = f"🔤 **Inglizcha**: `{english_word.capitalize()}`\n"
+        response_text += f"🇺🇿 **O'zbekcha**: `{uzbek_word.capitalize()}`\n\n"
+        
+        if dict_info:
+            if dict_info['phonetic']: 
+                response_text += f"🗣 **Transkripsiya**: `{dict_info['phonetic']}`\n"
+            response_text += f"📖 **Ta'rif**: {dict_info['definition']}\n"
             
-        ai_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
-        
-        lines = ai_text.split('\n')
-        english_word_for_audio = "word"
-        for line in lines:
-            if "🔤" in line and "**Inglizcha**" in line:
-                english_word_for_audio = line.split(":", 1)[1].strip().replace('*', '').replace('`', '')
-                break
-        
-        if lines[0].startswith("[") and lines[0].endswith("]"):
-            display_text = '\n'.join(lines[1:]).strip()
+            if dict_info['example']: 
+                # Misolni ham o'zbekchaga tarjima qilib qo'shamiz
+                uz_example = translator_to_uz.translate(dict_info['example'])
+                response_text += f"💡 **Misol**: {dict_info['example']} - _{uz_example}_\n"
+                
+            response_text += f"🔗 **Sinonimlar**: {dict_info['synonyms']}"
         else:
-            display_text = ai_text
+            response_text += "⚠️ _Batafsil inglizcha ta'rif va misollar topilmadi._"
 
-        await wait_msg.edit_text(display_text, reply_markup=get_keyboard(english_word_for_audio))
+        await wait_msg.edit_text(response_text, reply_markup=get_keyboard(english_word))
+        
     except Exception as e:
-        await wait_msg.edit_text("⚠️ Ulanishda xatolik yuz berdi. Iltimos, so'zni qayta yuborib ko'ring.")
+        await wait_msg.edit_text("⚠️ Tarjima qilishda xatolik yuz berdi. Internet yoki baza uzilib qolgan bo'lishi mumkin.")
 
 # --- 7. ISHGA TUSHIRISH ---
 async def main():
     async with app:
-        print("✅ Super AI Bot muvaffaqiyatli ishga tushdi!")
+        print("✅ Klassik Lug'at Bot muvaffaqiyatli ishga tushdi!")
         await idle()
 
 if __name__ == "__main__":
