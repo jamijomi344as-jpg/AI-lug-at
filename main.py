@@ -37,7 +37,7 @@ BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
 GEMINI_API_KEY = "AIzaSyC72VvxxboViR-c2kuzoK2_PFGkVP4IFsM" # Sizning kalitingiz kiritildi!
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-pro')
 
 app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) 
 
