@@ -2,6 +2,7 @@ import os
 import threading
 import asyncio
 import requests
+import uuid # <-- Telegram uzun gaplarda qotib qolmasligi uchun qo'shildi
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from gtts import gTTS
 from deep_translator import GoogleTranslator
@@ -38,11 +39,14 @@ BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
 
 app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) 
 
+# Uzun gaplarni tugmaga sig'dirish uchun vaqtinchalik xotira
+AUDIO_CACHE = {}
+
 # --- 4. TUGMALAR ---
-def get_keyboard(audio_word=None):
+def get_keyboard(audio_id=None):
     buttons = []
-    if audio_word:
-        buttons.append([InlineKeyboardButton("🔊 O'qilishi (Ovozli)", callback_data=f"audio_{audio_word}")])
+    if audio_id:
+        buttons.append([InlineKeyboardButton("🔊 O'qilishi (Ovozli)", callback_data=f"audio_{audio_id}")])
     buttons.append([InlineKeyboardButton("📚 Dasturchi bilan aloqa", url="https://t.me/durov")])
     return InlineKeyboardMarkup(buttons)
 
@@ -50,18 +54,24 @@ def get_keyboard(audio_word=None):
 async def start(client, message):
     await message.reply_text(
         "👋 **Salom! Men sizning Lug'at botingizman.**\n\n"
-        "Menga xohlagan o'zbekcha yoki inglizcha so'zingizni yuboring. Men uning tarjimasini, ta'rifini va audiosini topib beraman!"
+        "Menga xohlagan o'zbekcha yoki inglizcha so'z va gaplarni (15 ta so'zgacha) yuboring. Men uning tarjimasini, ta'rifini va audiosini topib beraman!"
     )
 
 # --- 5. OVOZ YASASH FUNKSIYASI (gTTS) ---
 @app.on_callback_query(filters.regex(r"^audio_"))
 async def send_audio(client, callback_query: CallbackQuery):
-    word = callback_query.data.split("_", 1)[1]
+    audio_id = callback_query.data.split("_", 1)[1]
+    
+    # Xotiradan gapni ajratib olamiz
+    word = AUDIO_CACHE.get(audio_id)
+    if not word:
+        return await callback_query.answer("⚠️ Bu xabar eskirgan, iltimos qaytadan yuboring.", show_alert=True)
+        
     await callback_query.answer("Ovoz tayyorlanmoqda... 🔊")
     
     try:
         tts = gTTS(text=word, lang='en', slow=False)
-        filename = f"{word}.mp3"
+        filename = f"{audio_id}.mp3"
         tts.save(filename)
         await client.send_voice(callback_query.message.chat.id, voice=filename)
         os.remove(filename)
@@ -115,7 +125,9 @@ def get_dictionary_info(word):
 async def handle_message(client, message):
     text = message.text.strip()
     
-    if len(text.split()) > 5: 
+    # 1. LIMIT 15 TA SO'ZGA OSHIRILDI
+    if len(text.split()) > 15: 
+        await message.reply_text("⚠️ Iltimos, 15 ta so'zdan kamroq matn yuboring.")
         return 
     
     wait_msg = await message.reply_text("🔍 Qidirilmoqda...")
@@ -129,8 +141,14 @@ async def handle_message(client, message):
         translator_to_uz = GoogleTranslator(source='en', target='uz')
         uzbek_word = translator_to_uz.translate(english_word).lower()
         
-        # 3. Inglizcha so'zning ta'riflarini tekin bazadan qidiramiz
-        dict_info = get_dictionary_info(english_word)
+        # 3. Faqat 1 ta so'z bo'lsagina lug'atdan qidiradi (gaplarni lug'atdan qidirib vaqt yo'qotmaydi)
+        dict_info = None
+        if len(english_word.split()) == 1:
+            dict_info = get_dictionary_info(english_word)
+        
+        # Ovoz uchun qisqa ID yasaymiz va xotiraga saqlaymiz
+        audio_id = str(uuid.uuid4())[:8]
+        AUDIO_CACHE[audio_id] = english_word
         
         response_text = f"🔤 **Inglizcha**: `{english_word.capitalize()}`\n"
         response_text += f"🇺🇿 **O'zbekcha**: `{uzbek_word.capitalize()}`\n\n"
@@ -147,9 +165,12 @@ async def handle_message(client, message):
                 
             response_text += f"🔗 **Sinonimlar**: {dict_info['synonyms']}"
         else:
-            response_text += "⚠️ _Batafsil inglizcha ta'rif va misollar topilmadi._"
+            if len(english_word.split()) > 1:
+                response_text += "💡 _Bu gap yoki ibora bo'lgani uchun, faqat tarjimasi va audiosi keltirildi._"
+            else:
+                response_text += "⚠️ _Batafsil inglizcha ta'rif va misollar topilmadi._"
 
-        await wait_msg.edit_text(response_text, reply_markup=get_keyboard(english_word))
+        await wait_msg.edit_text(response_text, reply_markup=get_keyboard(audio_id))
         
     except Exception as e:
         await wait_msg.edit_text("⚠️ Tarjima qilishda xatolik yuz berdi. Internet yoki baza uzilib qolgan bo'lishi mumkin.")
@@ -157,7 +178,7 @@ async def handle_message(client, message):
 # --- 7. ISHGA TUSHIRISH ---
 async def main():
     async with app:
-        print("✅ Klassik Lug'at Bot muvaffaqiyatli ishga tushdi!")
+        print("✅ Klassik Lug'at Bot (15 ta so'zlik) muvaffaqiyatli ishga tushdi!")
         await idle()
 
 if __name__ == "__main__":
