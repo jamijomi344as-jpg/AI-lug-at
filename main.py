@@ -74,7 +74,7 @@ async def handle_message(client, message):
     word = message.text.strip()
     
     if len(word.split()) > 5: 
-        return # Uzun xabarlarga e'tibor bermaydi
+        return 
     
     wait_msg = await message.reply_text("🧠 Sun'iy intellekt tahlil qilmoqda...")
     
@@ -90,4 +90,50 @@ async def handle_message(client, message):
     Javobni AYNAN quyidagi formatda, ortiqcha gaplarsiz qaytar. Boshida va oxirida hechnarsa yozma:
     [{word}_EN]
     🔤 **Inglizcha**: [Inglizcha so'z]
-    🇺🇿 **O'zbekcha**:
+    🇺🇿 **O'zbekcha**: [O'zbekcha so'z]
+    🗣 **Transkripsiya**: [Xalqaro talaffuzi]
+    📖 **Ta'rif (Def)**: [Inglizcha oson ta'rifi]
+    💡 **Misol**: [Akademik va tushunarli sifatli inglizcha gap] - [O'zbekcha tarjimasi]
+    🔗 **Sinonimlar**: [3-4 ta mos inglizcha sinonim]
+    """
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    
+    try:
+        res = await asyncio.to_thread(requests.post, url, json=payload, timeout=20)
+        data = res.json()
+        
+        if res.status_code != 200:
+            error_msg = data.get('error', {}).get('message', 'Noma`lum xato yuz berdi.')
+            await wait_msg.edit_text(f"⚠️ API xatosi:\n`{error_msg}`")
+            return
+            
+        ai_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+        
+        lines = ai_text.split('\n')
+        english_word_for_audio = "word"
+        for line in lines:
+            if "🔤" in line and "**Inglizcha**" in line:
+                english_word_for_audio = line.split(":", 1)[1].strip().replace('*', '').replace('`', '')
+                break
+        
+        if lines[0].startswith("[") and lines[0].endswith("]"):
+            display_text = '\n'.join(lines[1:]).strip()
+        else:
+            display_text = ai_text
+
+        await wait_msg.edit_text(display_text, reply_markup=get_keyboard(english_word_for_audio))
+    except Exception as e:
+        await wait_msg.edit_text("⚠️ Ulanishda xatolik yuz berdi. Iltimos, so'zni qayta yuborib ko'ring.")
+
+# --- 7. ISHGA TUSHIRISH ---
+async def main():
+    async with app:
+        print("✅ Super AI Bot muvaffaqiyatli ishga tushdi!")
+        await idle()
+
+if __name__ == "__main__":
+    loop.run_until_complete(main())
