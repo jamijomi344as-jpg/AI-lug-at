@@ -1,9 +1,8 @@
 import os
 import threading
 import asyncio
-import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from deep_translator import GoogleTranslator
+from gtts import gTTS
 
 # --- 1. PYROGRAM MOTORINI ISHGA TUSHIRISH ---
 try:
@@ -12,10 +11,11 @@ except RuntimeError:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+import google.generativeai as genai
 from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-# --- 2. RENDER.COM UCHUN ALDOVCHI SERVER ---
+# --- 2. RENDER UCHUN ALDOVCHI SERVER (24/7 ishlashi uchun) ---
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -30,168 +30,114 @@ def run_dummy_server():
 
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-
 # --- 3. SOZLAMALAR ---
 API_ID = 36053423
 API_HASH = "82f39002cfa480485590bf961e20bf55"
 BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
-MW_API_KEY = "SHU_YERGA_MERRIAM_WEBSTER_KALITINGIZNI_QOYING" # <-- Olingan yangi kalitni shu yerga kiritasiz
+GEMINI_API_KEY = "AIzaSyC72VvxxboViR-c2kuzoK2_PFGkVP4IFsM" # Sizning kalitingiz kiritildi!
+
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) 
-user_modes = {}
 
-
-# --- 4. MERRIAM-WEBSTER FUNKSIYASI ---
-def get_mw_details(word):
-    """Merriam-Webster'dan so'z ta'riflari va ovoz faylini olish"""
-    url = f"https://www.dictionaryapi.com/api/v3/references/collegiate/json/{word}?key={MW_API_KEY}"
-    try:
-        res = requests.get(url, timeout=5)
-        if res.status_code != 200:
-            return {"ok": False}
-            
-        data = res.json()
-        
-        # Agar so'z topilmasa
-        if not data or not isinstance(data[0], dict):
-            return {"ok": False}
-            
-        # Transkripsiya va Ovoz fayli nomini ajratib olish
-        hwi = data[0].get('hwi', {})
-        prs = hwi.get('prs', [{}])[0]
-        phonetic = prs.get('mw', 'N/A')
-        audio_name = prs.get('sound', {}).get('audio') # Ovozli fayl nomi
-        
-        meanings_text = ""
-        
-        # Eng asosiy 3 ta ma'noni olish
-        for item in data[:3]:
-            part_of_speech = item.get('fl', 'bilinmaydi') # noun, verb...
-            shortdefs = item.get('shortdef', [])
-            
-            if shortdefs:
-                meanings_text += f"\n🔹 **{part_of_speech.capitalize()}**: _{shortdefs[0]}_\n"
-
-        return {
-            "ok": True,
-            "phonetic": f"/{phonetic}/" if phonetic != 'N/A' else "N/A",
-            "meanings_text": meanings_text if meanings_text else "Ta'rif topilmadi",
-            "audio_name": audio_name
-        }
-    except Exception:
-        return {"ok": False}
-
-
-# --- 5. TUGMALAR VA BUYRUQLAR ---
-def get_keyboard(user_id, audio_name=None):
-    mode = user_modes.get(user_id, "en_uz")
-    btn_text = "🔄 Inglizcha ➡️ O'zbekcha" if mode == "en_uz" else "🔄 O'zbekcha ➡️ Inglizcha"
-    
-    # Asosiy tugmalar
-    buttons = [[InlineKeyboardButton(btn_text, callback_data="toggle_mode")]]
-    
-    # Agar ovoz fayli mavjud bo'lsa, "O'qilishi" tugmasini qo'shamiz
-    if audio_name:
-        buttons.append([InlineKeyboardButton("🔊 O'qilishi", callback_data=f"audio_{audio_name}")])
+# --- 4. TUGMALAR ---
+def get_keyboard(audio_word=None):
+    buttons = []
+    # Agar so'z mavjud bo'lsa, uni ovozli qilib berish tugmasi
+    if audio_word:
+        buttons.append([InlineKeyboardButton("🔊 O'qilishi (Ovozli)", callback_data=f"audio_{audio_word}")])
         
     buttons.append([InlineKeyboardButton("📚 Dasturchi bilan aloqa", url="https://t.me/durov")])
     return InlineKeyboardMarkup(buttons)
 
 @app.on_message(filters.command("start"))
 async def start(client, message):
-    user_id = message.from_user.id
-    user_modes[user_id] = "en_uz"
     await message.reply_text(
-        "👋 **Salom! Men Merriam-Webster akademik bazasiga ulangan lug'at botiman.**\n\n"
-        "Menga istalgan so'zni yuboring, men uning tarjimasini, professional ta'rifini va talaffuzini keltiraman:",
-        reply_markup=get_keyboard(user_id)
+        "👋 **Salom! Men sizning Shaxsiy AI Lug'at botingizman.**\n\n"
+        "Menga xohlagan o'zbekcha yoki inglizcha so'zingizni yuboring. Men uning **aniq ma'nosini**, o'qilishini, misolini va audiosini darhol topib beraman!"
     )
 
-@app.on_callback_query(filters.regex("toggle_mode"))
-async def toggle_mode(client, callback_query: CallbackQuery):
-    user_id = callback_query.from_user.id
-    current_mode = user_modes.get(user_id, "en_uz")
-    new_mode = "uz_en" if current_mode == "en_uz" else "en_uz"
-    user_modes[user_id] = new_mode
-    text = "✅ **O'zbekchadan Inglizchaga**" if new_mode == "uz_en" else "✅ **Inglizchadan O'zbekchaga**"
-    await callback_query.answer("Til o'zgartirildi!", show_alert=False)
-    await callback_query.message.edit_text(f"{text}\n\nMenga so'z yuboring:", reply_markup=get_keyboard(user_id))
-
-# --- OVOZ YUBORISH FUNKSIYASI ---
+# --- 5. OVOZ YASASH FUNKSIYASI (gTTS) ---
 @app.on_callback_query(filters.regex(r"^audio_"))
 async def send_audio(client, callback_query: CallbackQuery):
-    # Tugmadan fayl nomini ajratib olamiz
-    audio_name = callback_query.data.split("_", 1)[1]
+    word = callback_query.data.split("_", 1)[1]
+    await callback_query.answer("Ovoz tayyorlanmoqda... 🔊")
     
-    # Merriam-Webster API ovoz fayllarini joylashuvi qoidalari
-    if audio_name.startswith("bix"):
-        subdir = "bix"
-    elif audio_name.startswith("gg"):
-        subdir = "gg"
-    elif audio_name[0].isalpha():
-        subdir = audio_name[0]
-    else:
-        subdir = "number"
-        
-    # URL ni yig'ish
-    audio_url = f"https://media.merriam-webster.com/audio/prons/en/us/mp3/{subdir}/{audio_name}.mp3"
-    
-    await callback_query.answer("Ovoz yuklanmoqda... 🔊")
     try:
-        # Telegram orqali audioni bevosita url dan yuborish
-        await client.send_voice(callback_query.message.chat.id, voice=audio_url)
-    except Exception:
-        await callback_query.message.reply_text("⚠️ Ovozni yuklab olishda xatolik yuz berdi.")
+        # Tekin Google Text-to-Speech orqali mp3 yasaymiz
+        tts = gTTS(text=word, lang='en', slow=False)
+        filename = f"{word}.mp3"
+        tts.save(filename)
+        
+        # Tayyor faylni Telegramga tashlaymiz
+        await client.send_voice(callback_query.message.chat.id, voice=filename)
+        
+        # Tashlab bo'lgach, server axlatga to'lmasligi uchun o'chirib tashlaymiz
+        os.remove(filename)
+    except Exception as e:
+        await callback_query.message.reply_text("⚠️ Ovozni yasashda xatolik yuz berdi.")
 
-# --- ASOSIY XABARLARNI QABUL QILISH ---
+# --- 6. AQLLI TARJIMA VA TA'RIF (ASOSIY QISM) ---
 @app.on_message(filters.text & filters.private)
 async def handle_message(client, message):
     word = message.text.strip()
-    user_id = message.from_user.id
-    mode = user_modes.get(user_id, "en_uz")
     
-    if len(word.split()) > 3: 
-        await message.reply_text("Iltimos, qisqaroq so'z yoki ibora yuboring.")
+    if len(word.split()) > 4: 
+        await message.reply_text("Iltimos, bitta so'z yoki qisqaroq ibora yuboring.")
         return
     
-    wait_msg = await message.reply_text("🔍 Qidirilmoqda...")
+    wait_msg = await message.reply_text("🧠 Sun'iy intellekt tahlil qilmoqda...")
     
+    # GEMINI UCHUN SUPER-BUYRUQ
+    prompt = f"""
+    Sen professional va aqlli ingliz-o'zbek lug'atbotisan. 
+    Foydalanuvchi quyidagi so'zni yubordi: "{word}"
+
+    Vazifang:
+    1. Agar so'z o'zbek tilida bo'lsa (masalan "maktub"), uning inglizcha tarjimasini top ("letter").
+    2. DIQQAT: Inglizcha so'zning KO'P MA'NOLARI BO'LSA, FAQAT foydalanuvchi yuborgan o'zbekcha so'zga mos keladigan ma'nosini ol! (Masalan, "maktub" deb yuborilgan bo'lsa, "letter"ning alfavit harfi ma'nosini emas, balki "yozilgan xat/xabar" ma'nosini ol).
+    3. Ta'rif, misol va sinonimlar AYNAN SHU TANLANGAN MA'NOGA mos bo'lishi shart.
+    
+    Javobni AYNAN quyidagi formatda, ortiqcha gaplarsiz qaytar. Boshida va oxirida hechnarsa yozma:
+    [{word}_EN]
+    🔤 **Inglizcha**: [Inglizcha so'z]
+    🇺🇿 **O'zbekcha**: [O'zbekcha so'z]
+    🗣 **Transkripsiya**: [Xalqaro talaffuzi, masalan /wɜːrd/]
+    📖 **Ta'rif (Def)**: [Inglizcha oson ta'rifi]
+    💡 **Misol**: [Akademik va tushunarli sifatli inglizcha gap] - [O'zbekcha tarjimasi]
+    🔗 **Sinonimlar**: [3-4 ta mos inglizcha sinonim]
+    """
+
     try:
-        word_to_translate = word.lower()
-
-        # O'zbekchadan Inglizchaga va teskari tarjima
-        if mode == "en_uz":
-            uz_translation = GoogleTranslator(source='en', target='uz').translate(word_to_translate)
-            en_word, uz_word = word, uz_translation
+        response = await model.generate_content_async(prompt)
+        ai_text = response.text.strip()
+        
+        # 1. Matnni qatorlarga ajratamiz
+        lines = ai_text.split('\n')
+        
+        # 2. Ovoz fayli yaratish uchun sof inglizcha so'zni matn ichidan aqlli ushlab olamiz
+        english_word_for_audio = "word"
+        for line in lines:
+            if "🔤" in line and "**Inglizcha**" in line:
+                # "🔤 **Inglizcha**: Letter" kabi qatordan faqat "Letter" so'zini qirqib olamiz
+                english_word_for_audio = line.split(":", 1)[1].strip().replace('*', '').replace('`', '')
+                break
+        
+        # 3. Yordamchi birinchi qatorni (masalan [maktub_EN]) foydalanuvchiga ko'rsatmaslik uchun kesib tashlaymiz
+        if lines[0].startswith("[") and lines[0].endswith("]"):
+            display_text = '\n'.join(lines[1:]).strip()
         else:
-            en_translation = GoogleTranslator(source='uz', target='en').translate(word_to_translate)
-            en_word, uz_word = en_translation, word
+            display_text = ai_text
 
-        # Merriam-Webster
-        details = get_mw_details(en_word)
-
-        text = f"🔤 **Inglizcha**: `{en_word.capitalize()}`\n"
-        text += f"🇺🇿 **O'zbekcha**: `{uz_word.capitalize()}`\n\n"
-        
-        audio_to_pass = None
-        
-        if details["ok"]:
-            text += f"🗣 **Talaffuz**: `{details['phonetic']}`\n"
-            text += f"📖 **Merriam-Webster izohi**: {details['meanings_text']}"
-            audio_to_pass = details.get("audio_name") # Agar audio bor bo'lsa
-        else:
-            if mode == "uz_en":
-                text += "⚠️ _Inglizcha aniq ta'rif topilmadi._"
-        
-        await wait_msg.edit_text(text, reply_markup=get_keyboard(user_id, audio_to_pass))
+        await wait_msg.edit_text(display_text, reply_markup=get_keyboard(english_word_for_audio))
     except Exception as e:
         await wait_msg.edit_text(f"Xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring.\n`{e}`")
 
-
-# --- 6. ISHGA TUSHIRISH ---
+# --- 7. ISHGA TUSHIRISH ---
 async def main():
     async with app:
-        print("✅ Merriam-Webster Bot muvaffaqiyatli ishga tushdi!")
+        print("✅ Super AI Bot muvaffaqiyatli ishga tushdi!")
         await idle()
 
 if __name__ == "__main__":
