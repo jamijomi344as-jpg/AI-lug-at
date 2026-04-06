@@ -39,16 +39,13 @@ BOT_TOKEN = "8798789058:AAGKA20LbcczGx4N0YrSLMhm2Wj1tci-V4E"
 
 app = Client("dictionary_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) 
 
-# Xotira uchun lug'atlar (Vaqtinchalik ma'lumotlar bazasi)
-AUDIO_CACHE = {}  # Ovoz va Saqlash uchun so'zlarni ushlab turadi
-USER_LANGS = {}   # Foydalanuvchi qaysi tilni tanlagani (UZ-EN yoki EN-UZ)
-USER_VOCAB = {}   # Foydalanuvchining shaxsiy zametkasi (Saqlagan so'zlari)
+AUDIO_CACHE = {}  
+USER_LANGS = {}   
+USER_VOCAB = {}   
 
-# --- 4. TUGMALAR (YANGILANGAN) ---
+# --- 4. TUGMALAR ---
 def get_keyboard(user_id, audio_id=None):
     buttons = []
-    
-    # 1-qator: Ovoz va Saqlash (Faqat so'z qidirilganda chiqadi)
     row1 = []
     if audio_id:
         row1.append(InlineKeyboardButton("🔊 O'qilishi", callback_data=f"audio_{audio_id}"))
@@ -56,7 +53,6 @@ def get_keyboard(user_id, audio_id=None):
     if row1:
         buttons.append(row1)
         
-    # 2-qator: Tilni almashtirish va Zametka
     current_lang = USER_LANGS.get(user_id, "uz-en")
     lang_text = "🇺🇿 UZ ➡️ 🇬🇧 EN" if current_lang == "uz-en" else "🇬🇧 EN ➡️ 🇺🇿 UZ"
     
@@ -65,7 +61,6 @@ def get_keyboard(user_id, audio_id=None):
         InlineKeyboardButton("📝 Lug'atim", callback_data="vocab")
     ])
     
-    # 3-qator: Dasturchi bilan aloqa
     buttons.append([InlineKeyboardButton("📚 Dasturchi bilan aloqa", url="https://t.me/durov")])
     return InlineKeyboardMarkup(buttons)
 
@@ -75,7 +70,7 @@ async def start(client, message):
     await message.reply_text(
         "👋 **Salom! Men sizning Shaxsiy Lug'at botingizman.**\n\n"
         "Menga xohlagan so'z yoki gaplarni (15 ta so'zgacha) yuboring. O'zingizga yoqqan so'zlarni xotiraga saqlab borishingiz mumkin!",
-        reply_markup=get_keyboard(user_id) # Start bosganda ham pastki tugmalar chiqadi
+        reply_markup=get_keyboard(user_id) 
     )
 
 # --- 5. BARCHA TUGMALAR UCHUN YAGONA BOSHQARUV ---
@@ -84,11 +79,9 @@ async def handle_callbacks(client, query: CallbackQuery):
     data = query.data
     user_id = query.from_user.id
     
-    # 1. OVOZ TUGMASI
     if data.startswith("audio_"):
         audio_id = data.split("_", 1)[1]
         word_data = AUDIO_CACHE.get(audio_id)
-        
         if not word_data:
             return await query.answer("⚠️ Bu xabar eskirgan, so'zni qaytadan yuboring.", show_alert=True)
             
@@ -99,30 +92,25 @@ async def handle_callbacks(client, query: CallbackQuery):
             tts.save(filename)
             await client.send_voice(query.message.chat.id, voice=filename)
             os.remove(filename)
-        except Exception as e:
+        except Exception:
             await query.message.reply_text("⚠️ Ovozni yasashda xatolik yuz berdi.")
             
-    # 2. SAQLASH TUGMASI (ZAMETKA)
     elif data.startswith("save_"):
         audio_id = data.split("_", 1)[1]
         word_data = AUDIO_CACHE.get(audio_id)
-        
         if not word_data:
             return await query.answer("⚠️ Bu xabar eskirgan.", show_alert=True)
             
         if user_id not in USER_VOCAB:
             USER_VOCAB[user_id] = []
             
-        # Saqlanadigan matn formati
         entry = f"🇬🇧 {word_data['en'].capitalize()} - 🇺🇿 {word_data['uz'].capitalize()}"
-        
         if entry not in USER_VOCAB[user_id]:
             USER_VOCAB[user_id].append(entry)
             await query.answer("✅ So'z lug'atingizga muvaffaqiyatli saqlandi!", show_alert=True)
         else:
             await query.answer("ℹ️ Bu so'z allaqachon lug'atingizda bor.", show_alert=True)
             
-    # 3. TILNI ALMASHTIRISH TUGMASI
     elif data == "lang":
         current = USER_LANGS.get(user_id, "uz-en")
         new_lang = "en-uz" if current == "uz-en" else "uz-en"
@@ -130,16 +118,15 @@ async def handle_callbacks(client, query: CallbackQuery):
         
         await query.answer(f"Til o'zgartirildi!", show_alert=False)
         
-        # Tugma yozuvi o'zgarishi uchun ekranni yangilaymiz
         audio_id = None
-        for row in query.message.reply_markup.inline_keyboard:
-            for btn in row:
-                if btn.callback_data and btn.callback_data.startswith("audio_"):
-                    audio_id = btn.callback_data.split("_", 1)[1]
-                    break
+        if query.message.reply_markup:
+            for row in query.message.reply_markup.inline_keyboard:
+                for btn in row:
+                    if btn.callback_data and btn.callback_data.startswith("audio_"):
+                        audio_id = btn.callback_data.split("_", 1)[1]
+                        break
         await query.message.edit_reply_markup(get_keyboard(user_id, audio_id))
 
-    # 4. LUG'ATIM (SAQLANGAN SO'ZLARNI KO'RISH)
     elif data == "vocab":
         vocab = USER_VOCAB.get(user_id, [])
         if not vocab:
@@ -187,37 +174,34 @@ def get_dictionary_info(word):
     except Exception:
         return None
 
-@app.on_message(filters.text & filters.private & ~filters.command("start"))
+@app.on_message(filters.text & filters.private & filters.incoming & ~filters.command("start"))
 async def handle_message(client, message):
     text = message.text.strip()
     user_id = message.from_user.id
     
     if len(text.split()) > 15: 
-        await message.reply_text("⚠️ Iltimos, 15 ta so'zdan kamroq matn yuboring.")
         return 
     
     wait_msg = await message.reply_text("🔍 Qidirilmoqda...")
     
     try:
-        # Foydalanuvchi tanlagan til yo'nalishiga qarab tarjima qilamiz
         current_lang = USER_LANGS.get(user_id, "uz-en")
         
+        # MANA SHU YERDA GALLYUTSINATSIYA YO'Q QILINDI!
+        # O'zidan-o'zi so'z qoshmaydi, siz yozgan so'zni asliga tegmaydi.
         if current_lang == "uz-en":
-            english_word = await asyncio.to_thread(GoogleTranslator(source='auto', target='en').translate, text)
-            english_word = english_word.lower()
-            uzbek_word = await asyncio.to_thread(GoogleTranslator(source='en', target='uz').translate, english_word)
-            uzbek_word = uzbek_word.lower()
-        else: # EN-UZ bo'lsa
-            uzbek_word = await asyncio.to_thread(GoogleTranslator(source='auto', target='uz').translate, text)
-            uzbek_word = uzbek_word.lower()
+            uzbek_word = text.lower()
             english_word = await asyncio.to_thread(GoogleTranslator(source='uz', target='en').translate, uzbek_word)
             english_word = english_word.lower()
+        else: # EN-UZ
+            english_word = text.lower()
+            uzbek_word = await asyncio.to_thread(GoogleTranslator(source='en', target='uz').translate, english_word)
+            uzbek_word = uzbek_word.lower()
         
         dict_info = None
         if len(english_word.split()) == 1:
             dict_info = await asyncio.to_thread(get_dictionary_info, english_word)
         
-        # Audio va Saqlash tugmalari ishlashi uchun so'zlarni xotiraga olamiz
         audio_id = str(uuid.uuid4())[:8]
         AUDIO_CACHE[audio_id] = {"en": english_word, "uz": uzbek_word}
         
@@ -248,7 +232,7 @@ async def handle_message(client, message):
 # --- 7. ISHGA TUSHIRISH ---
 async def main():
     async with app:
-        print("✅ Zametkali Lug'at Bot (Mukammal versiya) ishga tushdi!")
+        print("✅ Tartibli va Aqlli Bot ishga tushdi!")
         await idle()
 
 if __name__ == "__main__":
